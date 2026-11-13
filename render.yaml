@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: conjunto-ia
+    runtime: node
+    region: ohio
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BASE_URL
+        value: https://conjunto-ia.skynetgenesis.com
+      - key: CORREO_REMITENTE
+        value: conjunto-ia@skynetgenesis.com
+      - key: DUENO_CUENTAS
+        value: rikardolondono@gmail.com
