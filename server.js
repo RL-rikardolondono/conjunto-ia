@@ -76,6 +76,24 @@ function nuevoConjunto(d, t = hoyCO()) {
     rubros: RUBROS_BASE.map((x, i) => ({ id: 'rb' + i, n: x, anual: 0 })), repLegal: d.admin, avisosEnviados: {} };
 }
 function sinHash(u) { if (!u) return u; const { hash, ...r } = u; return r; }
+/* revisión triple (14 nov 2026): todo texto que guarda un usuario pasa por aquí antes de llegar a la base.
+   < y > se cambian por ‹ › (nadie mete código en la pantalla de otro) y los campos de imagen solo aceptan imágenes reales. */
+const CAMPOS_IMG = new Set(['foto', 'firma', 'fotoA', 'fotoD', 'imagen', 'logo']);
+const IMG_OK = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/;
+function sanear(v, clave = '', prof = 0) {
+  if (prof > 12) return null;
+  if (typeof v === 'string') {
+    if (CAMPOS_IMG.has(clave)) return IMG_OK.test(v) ? v : null;
+    if (v.startsWith('data:') && /^data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/=\s]*$/.test(v)) return v; // documentos adjuntos
+    return v.replace(/</g, '‹').replace(/>/g, '›');
+  }
+  if (Array.isArray(v)) return v.map(x => sanear(x, clave === 'fotos' ? 'foto' : '', prof + 1));
+  if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v)) { if (k === '__proto__' || k === 'constructor') continue; o[k] = sanear(x, k, prof + 1); } return o; }
+  return v;
+}
+/* límites simples por IP o por correo (enlaces de contraseña, registro, códigos de inscripción) */
+const LIM = new Map();
+function limite(k, max, ms) { const t = Date.now(); const a = (LIM.get(k) || []).filter(x => x > t - ms); if (a.length >= max) { LIM.set(k, a); return false; } a.push(t); LIM.set(k, a); if (LIM.size > 5000) for (const [kk, vv] of LIM) if (!vv.some(x => x > t - 36e5)) LIM.delete(kk); return true; }
 /* fusión de tres vías (asambleas: votos y asistencia de varias personas a la vez) */
 function fusion(base, mio, serv) {
   if (JSON.stringify(mio) === JSON.stringify(base)) return serv;
@@ -235,7 +253,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
 
   /* ---------------- rutas ---------------- */
   const app = express();
-  app.disable('x-powered-by');
+  app.disable('x-powered-by'); app.set('trust proxy', 1);
   app.use(express.json({ limit: '12mb' }));
   app.use((req, res, next) => { res.set('X-Content-Type-Options', 'nosniff'); res.set('Referrer-Policy', 'strict-origin-when-cross-origin'); next(); });
   const err = (res, st, m) => res.status(st).json({ error: m });
@@ -255,16 +273,27 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
   });
 
   app.get('/health', (req, res) => res.json({ ok: true }));
+  /* despertador diario (GitHub Actions del repositorio): revisa pagos pendientes y manda los avisos del día. Es idempotente. */
+  let ultimoCron = 0;
+  app.get('/api/cron', h(async (req, res) => {
+    if (Date.now() - ultimoCron < 5 * 60e3) return res.json({ ok: true, omitido: true });
+    ultimoCron = Date.now(); await revisarPendientes().catch(e => console.error('pendientes', e.message));
+    const hora = new Date(Date.now() - 5 * 3600e3).getUTCHours(); const n = hora >= 8 ? await avisosDiarios() : 0; res.json({ ok: true, correos: n });
+  }));
   app.get('/api/ping', h(async (req, res) => { res.json({ ok: true }); }));
 
   app.post('/api/registro', h(async (req, res) => {
-    const d = req.body || {}; const c0 = String(d.correo || '').toLowerCase().trim();
+    if (!limite('reg:' + req.ip, 6, 36e5)) return err(res, 429, 'Demasiados intentos de registro. Intente de nuevo en una hora.');
+    const d = sanear(req.body || {}); const c0 = String(d.correo || '').toLowerCase().trim();
     if (!d.nombre || !d.nit || !d.ciudad || !d.direccion || !(+d.numUnidades > 0) || !d.admin) return err(res, 400, 'Complete todos los datos del conjunto y del administrador.');
     if (!correoOk(c0)) return err(res, 400, 'Escriba un correo válido.'); if (String(d.clave || '').length < 10) return err(res, 400, 'La contraseña debe tener mínimo 10 caracteres.');
     if (!d.acepto) return err(res, 400, 'Debe aceptar los términos de uso y el tratamiento de datos.');
     const nitN = String(d.nit).replace(/\D/g, '');
     const ya = await q('select id from usuarios where correo = $1', [c0]); const todos = await q('select d from conjuntos');
-    if (ya.rows.length || todos.rows.some(x => String(x.d.nit || '').replace(/\D/g, '') === nitN)) return err(res, 409, 'Este correo o este NIT ya tuvo una cuenta. La prueba gratis es una sola vez; si ya tiene cuenta, use «Ingresar».');
+    const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const telN = String(d.celular || '').replace(/\D/g, '').slice(-10); const nomN = norm(d.nombre) + '|' + norm(d.ciudad);
+    const telYa = telN.length >= 7 && (await q('select d from usuarios')).rows.some(x => String(x.d.tel || '').replace(/\D/g, '').slice(-10) === telN && x.d.perfil !== 'residente');
+    if (ya.rows.length || telYa || todos.rows.some(x => String(x.d.nit || '').replace(/\D/g, '') === nitN || norm(x.d.nombre) + '|' + norm(x.d.ciudad) === nomN)) return err(res, 409, 'Este correo, celular, NIT o conjunto ya tuvo una cuenta. La prueba gratis es una sola vez; si ya tiene cuenta, use «Ingresar».');
     const c = nuevoConjunto({ ...d, numUnidades: +d.numUnidades }, ahoraFn());
     await q('insert into conjuntos (id, d) values ($1,$2)', [c.id, JSON.stringify(c)]);
     const u = { id: rid('u'), cj: c.id, nombre: String(d.admin).slice(0, 120), correo: c0, tel: String(d.celular || '').slice(0, 40), perfil: 'admin', cargo: 'Administración', activo: true, hash: hashClave(d.clave), datosAut: ahora() };
@@ -302,7 +331,8 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
   app.get('/api/estado', auth(async (req, res) => res.json(await estado(req.u.cj, req.u))));
 
   app.post('/api/olvido', h(async (req, res) => {
-    const c0 = String(req.body.correo || '').toLowerCase().trim(); const r = await q('select * from usuarios where correo = $1', [c0]);
+    const c0 = String(req.body.correo || '').toLowerCase().trim();
+    if (!limite('olv:' + c0, 3, 36e5) || !limite('olvip:' + req.ip, 10, 36e5)) return res.json({ mensaje: 'Ya le enviamos enlaces hace poco. Revise su correo (también la carpeta de spam) o intente en una hora.' }); const r = await q('select * from usuarios where correo = $1', [c0]);
     for (const x of r.rows) { if (x.d.bloqueado) continue; await enviarEnlace({ ...x.d, id: x.id, correo: x.correo }); }
     res.json({ mensaje: 'Si el correo está registrado, le llegará un enlace para crear una contraseña nueva (vence en 1 hora).' });
   }));
@@ -330,6 +360,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
   }));
 
   app.get('/api/ins/:cod', h(async (req, res) => {
+    if (!limite('ins:' + req.ip, 30, 6e5)) return err(res, 429, 'Demasiados intentos. Espere unos minutos.');
     const cod = String(req.params.cod || '').toUpperCase(); const r = await q('select d from conjuntos'); const c = r.rows.map(x => x.d).find(x => x.codigo === cod);
     if (!c || c.bloqueado) return err(res, 404, 'No encontramos un conjunto con ese código. Revíselo con la administración.');
     const us = await q("select d from reg where cj = $1 and t = 'unidades' and borrado = false", [c.id]);
@@ -337,7 +368,8 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
       unidades: us.rows.map(x => ({ id: x.d.id, cj: c.id, torre: x.d.torre, num: x.d.num, coef: 0 })) });
   }));
   app.post('/api/inscripcion', h(async (req, res) => {
-    const d = req.body || {}; const c = await getCJ(d.cj); if (!c) return err(res, 404, 'Conjunto no encontrado.');
+    if (!limite('insc:' + req.ip, 10, 36e5)) return err(res, 429, 'Demasiadas inscripciones desde esta conexión. Intente en una hora.');
+    const d = sanear(req.body || {}); const c = await getCJ(d.cj); if (!c) return err(res, 404, 'Conjunto no encontrado.');
     const co = String(d.correo || '').toLowerCase().trim();
     if (!d.nombre || !correoOk(co) || String(d.clave || '').length < 10 || !d.acepto || !d.unidad) return err(res, 400, 'Complete todos los datos, con contraseña de mínimo 10 caracteres y la autorización de datos.');
     const un = await q("select id from reg where cj = $1 and t = 'unidades' and id = $2 and borrado = false", [c.id, d.unidad]); if (!un.rows.length) return err(res, 400, 'Escoja su unidad.');
@@ -376,14 +408,15 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
         if (!ch || typeof ch.id !== 'string' || !ch.d || typeof ch.d !== 'object') continue;
         if (ch.t === 'conjunto') {
           if (u.perfil !== 'admin') { rech.push({ t: ch.t, id: ch.id, motivo: 'Solo la administración cambia los datos del conjunto.' }); continue; }
-          const cur = await getCJ(cj); const nuevo = { ...cur, ...ch.d }; for (const k of PROTEGIDOS_CJ) nuevo[k] = cur[k];
+          const cur = await getCJ(cj); const nuevo = { ...cur, ...sanear(ch.d) }; for (const k of PROTEGIDOS_CJ) nuevo[k] = cur[k];
           if (+nuevo.numUnidades > 0 === false) nuevo.numUnidades = cur.numUnidades; await setCJ(nuevo); continue;
         }
-        if (ch.t === 'usuarios') { const m = await cambioUsuario(u, ch.d); if (m) rech.push({ t: ch.t, id: ch.id, motivo: m }); continue; }
+        if (ch.t === 'usuarios') { const m = await cambioUsuario(u, sanear(ch.d)); if (m) rech.push({ t: ch.t, id: ch.id, motivo: m }); continue; }
         if (!TODAS.has(ch.t)) continue;
         if (!perm.has(ch.t)) { rech.push({ t: ch.t, id: ch.id, motivo: 'Su perfil no puede modificar esta información.' }); continue; }
         const r = await q('select d, ver, borrado from reg where cj = $1 and t = $2 and id = $3', [cj, ch.t, ch.id]); const prev = r.rows[0];
-        let d = { ...ch.d, id: ch.id, cj };
+        let d = { ...sanear(ch.d), id: ch.id, cj };
+        if (ch.t === 'bitacora' && !(prev && !prev.borrado)) { d.quien = u.super ? 'Superadministrador' : (u.nombre || 'Usuario'); d.fecha = ahora(); }
         const m = await reglas(u, ch.t, prev && !prev.borrado ? prev.d : null, d); if (typeof m === 'string') { rech.push({ t: ch.t, id: ch.id, motivo: m }); continue; } if (m) d = m;
         if (ch.t === 'asambleas' && prev && !prev.borrado && Number(prev.ver) > desde && ch.b) d = fusion(ch.b, d, prev.d);
         const v = await sigVer();
@@ -487,7 +520,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     if (!claveOk(req.body.clave, r.rows[0].v)) { fallo(k); return err(res, 401, 'Correo o contraseña incorrectos.'); }
     INT.delete(k); await bitaSA('Ingreso del Superadministrador'); res.json({ token: await nuevaSesion('super', null, true) });
   }));
-  app.post('/api/sa/olvido', h(async (req, res) => { await enviarEnlace({ id: 'super', nombre: 'Superadministrador' }); res.json({ mensaje: 'Le enviamos el enlace al correo del dueño de la plataforma (vence en 1 hora).' }); }));
+  app.post('/api/sa/olvido', h(async (req, res) => { if (!limite('saolv', 4, 36e5)) return res.json({ mensaje: 'Ya se enviaron varios enlaces en la última hora. Revise el correo del dueño de la plataforma.' }); await enviarEnlace({ id: 'super', nombre: 'Superadministrador' }); res.json({ mensaje: 'Le enviamos el enlace al correo del dueño de la plataforma (vence en 1 hora).' }); }));
   const sa = fn => auth(fn, { soloSuper: true });
   app.get('/api/sa/resumen', sa(async (req, res) => {
     const cs = (await q('select d from conjuntos')).rows.map(x => x.d);
