@@ -1,0 +1,14 @@
+name: Despertar Conjunto-IA
+# Llama una vez al día al servidor: revisa pagos pendientes de Bold y manda los avisos por correo
+# (fin de la prueba gratis y mensualidad). 13:05 UTC = 8:05 a. m. hora de Colombia.
+on:
+  schedule:
+    - cron: '5 13 * * *'
+  workflow_dispatch:
+jobs:
+  despertar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Despertar y correr la revision diaria
+        run: |
+          for i in 1 2 3; do curl -fsS --max-time 90 https://conjunto-ia.onrender.com/api/cron && break; sleep 30; done
