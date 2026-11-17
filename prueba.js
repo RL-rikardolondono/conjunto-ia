@@ -112,7 +112,7 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
   hoy = '2026-11-13';
   // superadministrador
   r = await api('/api/sa/login', { correo: 'superadmin.conjunto@skynetgenesis.com', clave: 'x' }); ok(r.st === 400, 'sin contraseña aún');
-  r = await api('/api/sa/olvido', {}); const cs = correos[correos.length - 1]; ok(cs.p === 'rikardolondono@gmail.com', 'enlace del súper al dueño');
+  r = await api('/api/sa/olvido', {}); const cs = correos[correos.length - 1]; ok(cs.p === (process.env.DUENO_CUENTAS||'contacto@skynetgenesis.com'), 'enlace del súper al dueño');
   r = await api('/api/clave', { token: linkDe(cs), clave: 'superClave123' }); ok(r.j.super === true, 'clave del súper');
   r = await api('/api/sa/login', { correo: 'superadmin.conjunto@skynetgenesis.com', clave: 'superClave123' }); const S = r.j.token; ok(!!S, 'súper entra');
   r = await api('/api/sa/resumen', null, S); ok(r.j.conjuntos[0].unidadesCargadas === 2 && r.j.pagos.some(p => p.estado === 'revisar'), 'resumen del súper');

@@ -17,4 +17,4 @@ services:
       - key: CORREO_REMITENTE
         value: conjunto-ia@skynetgenesis.com
       - key: DUENO_CUENTAS
-        value: rikardolondono@gmail.com
+        sync: false

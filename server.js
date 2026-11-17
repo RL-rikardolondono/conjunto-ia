@@ -137,7 +137,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
   const BASE = (env.BASE_URL || 'https://conjunto-ia.skynetgenesis.com').replace(/\/$/, '');
   const FIRMADOR = env.FIRMADOR_URL || 'https://skynetgenesis.com/bold-firma.php';
   const VERIFICADOR = env.VERIFICADOR_URL || 'https://skynetgenesis.com/bold-verificar.php';
-  const DUENO = env.DUENO_CUENTAS || 'rikardolondono@gmail.com';
+  const DUENO = env.DUENO_CUENTAS || 'contacto@skynetgenesis.com';
   const q = (sql, p) => pool.query(sql, p);
   const correo = enviarCorreo || (async (para, asunto, html) => {
     if (!env.BREVO_API_KEY) { console.log('[correo sin Brevo]', para, asunto); return false; }
