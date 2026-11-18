@@ -178,6 +178,8 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
   const BASE = (env.BASE_URL || 'https://conjunto-ia.skynetgenesis.com').replace(/\/$/, '');
   const FIRMADOR = env.FIRMADOR_URL || 'https://skynetgenesis.com/bold-firma.php';
   const VERIFICADOR = env.VERIFICADOR_URL || 'https://skynetgenesis.com/bold-verificar.php';
+  // Bold solo devuelve a *.skynetgenesis.com: desde onrender se vuelve por la página puente que lleva al cliente a la app
+  const VOLVER = env.VOLVER_BOLD || (/onrender\.com/.test(BASE) ? 'https://skynetgenesis.com/abrir.html' : BASE + '/');
   const DUENO = env.DUENO_CUENTAS || 'contacto@skynetgenesis.com';
   const q = (sql, p) => pool.query(sql, p);
   const correo = enviarCorreo || (async (para, asunto, html) => {
@@ -269,7 +271,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     return est;
   }
   async function firmar(plan, empresa) {
-    const url = FIRMADOR + '?plan=' + encodeURIComponent(plan) + '&empresa=' + encodeURIComponent(empresa) + '&meses=1&volver=' + encodeURIComponent(BASE + '/');
+    const url = FIRMADOR + '?plan=' + encodeURIComponent(plan) + '&empresa=' + encodeURIComponent(empresa) + '&meses=1&volver=' + encodeURIComponent(VOLVER);
     const { status, j } = await getJSON(url);
     if (status !== 200 || !j || j.error || j.ok === false) throw Object.assign(new Error('La pasarela de pagos no respondió. Intente de nuevo en unos minutos.'), { status: 502 });
     return j;
