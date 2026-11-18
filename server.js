@@ -26,9 +26,47 @@ const PERM = {
   contador: new Set(['cuotas','pagos','gastos','fondo','documentos','avisos','bitacora']),
   consejo: new Set(['reuniones','asambleas','documentos','comunicados','gastos','pagos','avisos','bitacora','ordenes','procesos']),
   revisor: new Set(['avisos','bitacora']),
-  residente: new Set(['visitas','reservas','pqrs','pagos','asambleas','avisos','comunicados','mudanzas','bitacora','procesos','paquetes'])
+  residente: new Set(['visitas','reservas','pqrs','pagos','asambleas','avisos','comunicados','mudanzas','bitacora','procesos','paquetes','restric'])
 };
 const APRUEBAN_PAGOS = new Set(['admin','consejo','contador','auxiliar']);
+// Lo que cada perfil RECIBE del servidor (Ley 1581: cada quien ve solo lo que necesita)
+const LEE = {
+  porteria: new Set(['unidades','visitas','paquetes','parq','minuta','mudanzas','rondas','puntos','restric','reservas','zonas','comunicados','avisos','documentos']),
+  vigilancia: new Set(['unidades','rondas','puntos','minuta','restric','visitas','parq','comunicados','avisos','personal','documentos']),
+  residente: new Set(['unidades','visitas','reservas','zonas','mudanzas','paquetes','pqrs','pagos','cuotas','procesos','comunicados','avisos','asambleas','documentos','restric'])
+};
+const DE_UNIDAD = new Set(['visitas','mudanzas','paquetes','pqrs','pagos','cuotas','procesos','restric']);
+const STAFF_VE_TODO = new Set(['admin','auxiliar','contador','revisor','consejo']);
+function avisoPara(a, u) {
+  const d = (a && a.dest) || {};
+  if (u.perfil === 'admin' || u.super) return true;
+  if (d.uid) return d.uid === u.id;
+  if (d.unidad) return u.perfil === 'residente' && d.unidad === u.unidad;
+  if (d.perfil) return d.perfil === u.perfil || (d.perfil === 'residente' && u.perfil === 'residente');
+  return true;
+}
+function verRegistro(u, t, d) { // null = no lo recibe; objeto = lo que recibe
+  if (!d) return d;
+  if (u.super || u.perfil === 'admin') return d;
+  if (t === 'avisos') return avisoPara(d, u) ? d : null;
+  if (t === 'bitacora') return STAFF_VE_TODO.has(u.perfil) ? d : null;
+  if (STAFF_VE_TODO.has(u.perfil)) return d;
+  const lee = LEE[u.perfil]; if (!lee || !lee.has(t)) return null;
+  if (t === 'documentos') return d.publico ? d : null;
+  if (u.perfil !== 'residente') return d;
+  if (t === 'unidades') return d.id === u.unidad ? d : { id: d.id, cj: d.cj, torre: d.torre, num: d.num, coef: d.coef };
+  if (t === 'reservas') return d.unidad === u.unidad ? d : { id: d.id, cj: d.cj, zona: d.zona, fecha: d.fecha, franja: d.franja, estado: d.estado };
+  if (DE_UNIDAD.has(t)) return d.unidad === u.unidad ? d : null;
+  return d;
+}
+function verUsuario(u, x) {
+  if (u.super || u.perfil === 'admin' || u.perfil === 'auxiliar' || x.id === u.id) return x;
+  if (x.pendiente || x.activo === false) return null;
+  const base = { id: x.id, cj: x.cj, nombre: x.nombre, perfil: x.perfil, cargo: x.cargo, activo: x.activo };
+  if (u.perfil === 'residente') return x.perfil === 'residente' ? null : base;
+  if (u.perfil === 'porteria' || u.perfil === 'vigilancia') return x.perfil === 'residente' ? { ...base, unidad: x.unidad, tel: x.tel, vehiculos: x.vehiculos } : base;
+  return { ...base, unidad: x.unidad }; // contador, revisor, consejo: sin correo ni celular
+}
 const PROTEGIDOS_CJ = ['id','pagadoHasta','pruebaHasta','interna','modulos','codigo','creado','nit','avisosEnviados','bloqueado'];
 
 /* ---------------- utilidades ---------------- */
@@ -53,6 +91,7 @@ function estadoCJ(c, t = hoyCO()) {
   if (c.interna) return 'activa';
   if ((!c.pagadoHasta || c.pagadoHasta < c.pruebaHasta) && t <= c.pruebaHasta) return 'prueba';
   if (c.pagadoHasta && t <= c.pagadoHasta) return 'activa';
+  if ((!c.pagadoHasta || c.pagadoHasta < c.pruebaHasta) && t < addD(c.pruebaHasta, 6)) return 'aviso'; // 5 días de aviso al terminar la prueba
   if (c.pagadoHasta && c.pagadoHasta >= c.pruebaHasta) {
     const d = new Date(c.pagadoHasta + 'T12:00:00Z'); const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1;
     if (t < ymd(y, m, 5)) return 'activa'; if (t < ymd(y, m, 10)) return 'aviso';
@@ -75,6 +114,8 @@ function nuevoConjunto(d, t = hoyCO()) {
     fondoPct: 1, pronto: { pct: 0, dia: 10 }, cajaMenor: 0, cajaDesde: t, recordarMora: true,
     rubros: RUBROS_BASE.map((x, i) => ({ id: 'rb' + i, n: x, anual: 0 })), repLegal: d.admin, avisosEnviados: {} };
 }
+const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+const nit9 = x => String(x || '').replace(/\D/g, '').slice(0, 9); // NIT sin dígito de verificación
 function sinHash(u) { if (!u) return u; const { hash, ...r } = u; return r; }
 /* revisión triple (14 nov 2026): todo texto que guarda un usuario pasa por aquí antes de llegar a la base.
    < y > se cambian por ‹ › (nadie mete código en la pantalla de otro) y los campos de imagen solo aceptan imágenes reales. */
@@ -147,6 +188,8 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     return r.ok;
   });
 
+  async function contarUnidades(cj) { const r = await q("select count(*)::int as n from reg where cj = $1 and t = 'unidades' and borrado = false", [cj]); return Number(r.rows[0].n) || 0; }
+  async function ajustarUnidades(cj) { const c = await getCJ(cj); if (!c) return; const n = await contarUnidades(cj); if (n > (+c.numUnidades || 0)) { c.numUnidades = n; await setCJ(c); } }
   async function sigVer() { const r = await q("update contador set v = v + 1 where k = 'ver' returning v"); return Number(r.rows[0].v); }
   async function sigNum(k) { const r = await q('update contador set v = v + 1 where k = $1 returning v', [k]); if (r.rows.length) return Number(r.rows[0].v); await q('insert into contador (k, v) values ($1, 1)', [k]); return 1; }
   async function getCJ(id) { const r = await q('select d from conjuntos where id = $1', [id]); return r.rows[0] ? r.rows[0].d : null; }
@@ -158,6 +201,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     if (ex.rows.length) await q('update usuarios set cj=$2, correo=$3, perfil=$4, hash=coalesce($5, hash), d=$6 where id=$1', [u.id, u.cj, u.correo, u.perfil, hash || null, JSON.stringify(d)]);
     else await q('insert into usuarios (id, cj, correo, perfil, hash, d) values ($1,$2,$3,$4,$5,$6)', [u.id, u.cj, u.correo, u.perfil, hash || null, JSON.stringify(d)]);
   }
+  async function usuariosVer(cj, u) { return (await usuariosCJ(cj)).map(x => verUsuario(u, x)).filter(Boolean); }
   async function usuariosCJ(cj) { const r = await q('select * from usuarios where cj = $1', [cj]); return r.rows.map(x => sinHash({ ...x.d, id: x.id, cj: x.cj, correo: x.correo, perfil: x.perfil })); }
   async function bita(cj, quien, texto) { const id = rid('b'); await q('insert into reg (cj, t, id, d, ver) values ($1,$2,$3,$4,$5)', [cj, 'bitacora', id, JSON.stringify({ id, cj, fecha: ahora(), quien, texto }), await sigVer()]); }
   async function bitaSA(texto) { await q('insert into bitacora_sa (id, texto) values ($1,$2)', [rid('s'), texto]); }
@@ -169,8 +213,9 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
   }
   async function estado(cj, u) {
     const c = await getCJ(cj); const r = await q('select t, id, d from reg where cj = $1 and borrado = false', [cj]);
-    const v = await q("select v from contador where k = 'ver'");
-    return { conjunto: c, usuarios: await usuariosCJ(cj), registros: r.rows.map(x => ({ t: x.t, id: x.id, d: x.d })), ver: Number(v.rows[0].v), misConjuntos: u && u.correo ? await misConjuntos(u.correo) : [] };
+    const v = await q("select v from contador where k = 'ver'"); const yo = u || { perfil: 'admin' };
+    const registros = []; for (const x of r.rows) { const d = verRegistro(yo, x.t, x.d); if (d) registros.push({ t: x.t, id: x.id, d }); }
+    return { conjunto: c, usuarios: await usuariosVer(cj, yo), registros, ver: Number(v.rows[0].v), misConjuntos: u && u.correo ? await misConjuntos(u.correo) : [] };
   }
   async function respuestaSesion(u) { const tok = await nuevaSesion(u.id, u.cj); await q('update usuarios set d = jsonb_set(d, \'{ultimo}\', to_jsonb($2::text)) where id = $1', [u.id, ahora()]).catch(() => {}); return { token: tok, usuario: sinHash(u), estado: await estado(u.cj, u) }; }
   async function enviarEnlace(u, tipo = 'clave') {
@@ -242,7 +287,8 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
       const quedan = diasEntre(t, c.pruebaHasta);
       if ((!c.pagadoHasta || c.pagadoHasta < c.pruebaHasta) && (quedan === 3 || quedan === 1)) { clave = 'prueba-' + quedan; asunto = 'Su prueba de Conjunto-IA termina en ' + quedan + (quedan === 1 ? ' día' : ' días'); txt = 'Para seguir usando Conjunto-IA sin interrupciones, pague la mensualidad desde la app (Pagar con Bold).'; }
       const est = estadoCJ(c, t); const dia = +t.slice(8);
-      if (!clave && est === 'aviso' && (dia === 5 || dia === 8)) { clave = 'mes-' + t.slice(0, 7) + '-' + dia; asunto = 'Mensualidad pendiente de Conjunto-IA'; txt = 'La mensualidad de su conjunto está pendiente. El día 10 se cierra el acceso. Pague desde la app con Bold.'; }
+      if (!clave && est === 'aviso' && (!c.pagadoHasta || c.pagadoHasta < c.pruebaHasta) && (quedan === -1 || quedan === -4)) { clave = 'fin-prueba' + quedan; const cierre = addD(c.pruebaHasta, 6); asunto = 'Terminó la prueba gratis de Conjunto-IA'; txt = 'La prueba gratis de su conjunto terminó. Si quiere seguir usando Conjunto-IA, pague la mensualidad desde «Suscripción» en la app. Si no se paga, el acceso se cierra el ' + cierre.split('-').reverse().join('/') + '. Su información queda guardada.'; }
+      if (!clave && est === 'aviso' && c.pagadoHasta && c.pagadoHasta >= c.pruebaHasta && (dia === 5 || dia === 8)) { clave = 'mes-' + t.slice(0, 7) + '-' + dia; asunto = 'Mensualidad pendiente de Conjunto-IA'; txt = 'La mensualidad de su conjunto está pendiente. El día 10 se cierra el acceso. Pague desde la app con Bold.'; }
       if (!clave || c.avisosEnviados[clave]) continue;
       const us = (await usuariosCJ(c.id)).filter(u => u.perfil === 'admin' && u.activo !== false);
       for (const u of us) { await correo(u.correo, asunto, `<p>${c.nombre}:</p><p>${txt}</p><p><a href="${BASE}/">${BASE}</a></p>`); n++; }
@@ -272,7 +318,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     req.s = s; req.u = u; return fn(req, res);
   });
 
-  app.get('/health', (req, res) => res.json({ ok: true }));
+  app.get('/health', (req, res) => { res.set('Access-Control-Allow-Origin', '*'); res.set('Cache-Control', 'no-store'); res.json({ ok: true, app: 'conjunto-ia' }); });
   /* despertador diario (GitHub Actions del repositorio): revisa pagos pendientes y manda los avisos del día. Es idempotente. */
   let ultimoCron = 0;
   app.get('/api/cron', h(async (req, res) => {
@@ -288,12 +334,11 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     if (!d.nombre || !d.nit || !d.ciudad || !d.direccion || !(+d.numUnidades > 0) || !d.admin) return err(res, 400, 'Complete todos los datos del conjunto y del administrador.');
     if (!correoOk(c0)) return err(res, 400, 'Escriba un correo válido.'); if (String(d.clave || '').length < 10) return err(res, 400, 'La contraseña debe tener mínimo 10 caracteres.');
     if (!d.acepto) return err(res, 400, 'Debe aceptar los términos de uso y el tratamiento de datos.');
-    const nitN = String(d.nit).replace(/\D/g, '');
+    const nitN = nit9(d.nit);
     const ya = await q('select id from usuarios where correo = $1', [c0]); const todos = await q('select d from conjuntos');
-    const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
     const telN = String(d.celular || '').replace(/\D/g, '').slice(-10); const nomN = norm(d.nombre) + '|' + norm(d.ciudad);
     const telYa = telN.length >= 7 && (await q('select d from usuarios')).rows.some(x => String(x.d.tel || '').replace(/\D/g, '').slice(-10) === telN && x.d.perfil !== 'residente');
-    if (ya.rows.length || telYa || todos.rows.some(x => String(x.d.nit || '').replace(/\D/g, '') === nitN || norm(x.d.nombre) + '|' + norm(x.d.ciudad) === nomN)) return err(res, 409, 'Este correo, celular, NIT o conjunto ya tuvo una cuenta. La prueba gratis es una sola vez; si ya tiene cuenta, use «Ingresar».');
+    if (ya.rows.length || telYa || todos.rows.some(x => nit9(x.d.nit) === nitN || norm(x.d.nombre) + '|' + norm(x.d.ciudad) === nomN)) return err(res, 409, 'Este correo, celular, NIT o conjunto ya tuvo una cuenta. La prueba gratis es una sola vez; si ya tiene cuenta, use «Ingresar».');
     const c = nuevoConjunto({ ...d, numUnidades: +d.numUnidades }, ahoraFn());
     await q('insert into conjuntos (id, d) values ($1,$2)', [c.id, JSON.stringify(c)]);
     const u = { id: rid('u'), cj: c.id, nombre: String(d.admin).slice(0, 120), correo: c0, tel: String(d.celular || '').slice(0, 40), perfil: 'admin', cargo: 'Administración', activo: true, hash: hashClave(d.clave), datosAut: ahora() };
@@ -382,9 +427,10 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
   }));
   app.post('/api/otro-conjunto', auth(async (req, res) => {
     if (req.u.super || req.u.perfil !== 'admin') return err(res, 403, 'Solo un administrador puede agregar conjuntos.');
-    const d = req.body || {}; if (!d.nombre || !d.nit || !(+d.numUnidades > 0)) return err(res, 400, 'Complete nombre, NIT y número de unidades.');
-    const nitN = String(d.nit).replace(/\D/g, ''); const todos = await q('select d from conjuntos');
-    if (todos.rows.some(x => String(x.d.nit || '').replace(/\D/g, '') === nitN)) return err(res, 409, 'Ese NIT ya tiene una cuenta.');
+    const d = sanear(req.body || {}); if (!d.nombre || !d.nit || !d.ciudad || !d.direccion || !(+d.numUnidades > 0)) return err(res, 400, 'Complete nombre, NIT, ciudad, dirección y número de unidades.');
+    if (!limite('otro:' + req.u.correo, 3, 864e5)) return err(res, 429, 'Ya agregó varios conjuntos hoy. Escríbanos por WhatsApp si necesita más.');
+    const nitN = nit9(d.nit); const todos = await q('select d from conjuntos');
+    if (todos.rows.some(x => nit9(x.d.nit) === nitN || norm(x.d.nombre) + '|' + norm(x.d.ciudad) === norm(d.nombre) + '|' + norm(d.ciudad))) return err(res, 409, 'Ese NIT o ese conjunto ya tuvo una cuenta. La prueba gratis es una sola vez por conjunto; si es suyo, escríbanos por WhatsApp.');
     const c = nuevoConjunto({ ...d, admin: req.u.nombre, numUnidades: +d.numUnidades }, ahoraFn()); await q('insert into conjuntos (id, d) values ($1,$2)', [c.id, JSON.stringify(c)]);
     const u = { ...req.u, id: rid('u'), cj: c.id, perfil: 'admin', activo: true }; delete u.unidad; await guardarU(u);
     await bita(c.id, u.nombre, 'Conjunto creado con prueba gratis hasta ' + c.pruebaHasta); await bitaSA('Conjunto nuevo: ' + c.nombre);
@@ -409,7 +455,8 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
         if (ch.t === 'conjunto') {
           if (u.perfil !== 'admin') { rech.push({ t: ch.t, id: ch.id, motivo: 'Solo la administración cambia los datos del conjunto.' }); continue; }
           const cur = await getCJ(cj); const nuevo = { ...cur, ...sanear(ch.d) }; for (const k of PROTEGIDOS_CJ) nuevo[k] = cur[k];
-          if (+nuevo.numUnidades > 0 === false) nuevo.numUnidades = cur.numUnidades; await setCJ(nuevo); continue;
+          if (+nuevo.numUnidades > 0 === false) nuevo.numUnidades = cur.numUnidades;
+          nuevo.numUnidades = Math.max(+nuevo.numUnidades, await contarUnidades(cj)); await setCJ(nuevo); continue;
         }
         if (ch.t === 'usuarios') { const m = await cambioUsuario(u, sanear(ch.d)); if (m) rech.push({ t: ch.t, id: ch.id, motivo: m }); continue; }
         if (!TODAS.has(ch.t)) continue;
@@ -436,31 +483,65 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     }
     const r = await q('select t, id, d, borrado from reg where cj = $1 and ver > $2', [cj, desde]);
     const v = await q("select v from contador where k = 'ver'");
-    res.json({ registros: r.rows.map(x => x.borrado ? { t: x.t, id: x.id, b: true } : { t: x.t, id: x.id, d: x.d }), rechazados: rech, conjunto: await getCJ(cj), usuarios: await usuariosCJ(cj), ver: Number(v.rows[0].v) });
+    const regs = []; for (const x of r.rows) { if (x.borrado) { regs.push({ t: x.t, id: x.id, b: true }); continue; } const d = verRegistro(u, x.t, x.d); if (d) regs.push({ t: x.t, id: x.id, d }); }
+    await ajustarUnidades(cj);
+    res.json({ registros: regs, rechazados: rech, conjunto: await getCJ(cj), usuarios: await usuariosVer(cj, u), ver: Number(v.rows[0].v) });
   }));
   async function reglas(u, t, prev, d) {
     const p = u.perfil;
     if (t === 'pagos') {
+      if (prev) d.regUser = prev.regUser; else d.regUser = u.id; // quién registró lo pone el servidor
+      if (!prev && d.estado !== 'por aprobar' && p !== 'residente') d.estado = 'por aprobar'; // todo pago nace «por aprobar»: quien registra no aprueba
       if (prev && prev.estado === 'aprobado' && p !== 'admin') return 'Un pago aprobado solo lo modifica la administración.';
       if (prev && prev.estado === 'aprobado' && d.valor !== prev.valor) return 'No se puede cambiar el valor de un pago aprobado.';
       if (d.estado === 'aprobado' && (!prev || prev.estado !== 'aprobado')) {
         if (!APRUEBAN_PAGOS.has(p)) return 'Su perfil no puede aprobar pagos.';
-        if (d.regUser && d.regUser === u.id) return 'Nadie puede aprobar un pago que registró él mismo.';
+        if (prev && prev.regUser && prev.regUser === u.id) return 'Nadie puede aprobar un pago que registró él mismo.';
         d.recibo = 'RC-' + String(await sigNum('rc-' + u.cj)).padStart(5, '0'); d.aprobEn = d.aprobEn || hoyCO();
       }
-      if (p === 'residente') { if (!prev && d.estado !== 'por aprobar') return 'Solo puede reportar pagos para que la administración los apruebe.'; if (d.unidad !== u.unidad) return 'Solo puede reportar pagos de su unidad.'; if (!prev) d.regUser = u.id; if (prev && prev.regUser !== u.id) return 'Solo puede modificar sus propios reportes.'; if (prev && d.estado !== prev.estado) return 'No puede cambiar el estado de un pago.'; }
+      if (p === 'residente') { if (!prev && d.estado !== 'por aprobar') return 'Solo puede reportar pagos para que la administración los apruebe.'; if (d.unidad !== u.unidad || (prev && prev.unidad !== u.unidad)) return 'Solo puede reportar pagos de su unidad.'; if (prev && prev.regUser !== u.id) return 'Solo puede modificar sus propios reportes.'; if (prev && d.estado !== prev.estado) return 'No puede cambiar el estado de un pago.'; }
       return d;
     }
-    if (t === 'pqrs' && !prev) { const y = new Date().getFullYear(); d.radicado = 'PQ-' + y + '-' + String(await sigNum('pq-' + u.cj + '-' + y)).padStart(4, '0'); if (p === 'residente' && d.unidad !== u.unidad) return 'Solo puede radicar PQRS de su unidad.'; return d; }
-    if (p === 'residente') {
-      if (['visitas', 'reservas', 'mudanzas'].includes(t) && d.unidad && d.unidad !== u.unidad) return 'Solo puede registrar información de su unidad.';
-      if (t === 'reservas' && prev && prev.estado !== d.estado && !['cancelada', 'solicitada', 'aprobada'].includes(d.estado)) return 'No puede cambiar el estado de la reserva.';
-      if (t === 'reservas' && !prev && d.estado === 'aprobada') { const z = await q("select d from reg where cj=$1 and t='zonas' and id=$2", [u.cj, d.zona]); if (z.rows[0] && z.rows[0].d.aprob) d.estado = 'solicitada'; }
-      if (['comunicados', 'paquetes', 'procesos', 'asambleas'].includes(t) && !prev) return 'Su perfil no puede crear este registro.';
-      if (t === 'pqrs' && prev && (d.estado !== prev.estado || d.respuesta !== prev.respuesta)) return 'La respuesta la da la administración.';
-    }
+    if (t === 'pqrs' && !prev) { const y = new Date().getFullYear(); d.radicado = 'PQ-' + y + '-' + String(await sigNum('pq-' + u.cj + '-' + y)).padStart(4, '0'); if (p === 'residente') { if (d.unidad !== u.unidad) return 'Solo puede radicar PQRS de su unidad.'; d.estado = 'radicada'; delete d.respuesta; } return d; }
+    if (p === 'residente') return reglasResidente(u, t, prev, d);
+    if (t === 'pqrs' && prev) d.radicado = prev.radicado;
     if (t === 'bitacora' && prev) return prev; // la bitácora no se modifica
     return d;
+  }
+  async function reglasResidente(u, t, prev, d) {
+    const MIA = 'Solo puede cambiar información de su unidad.';
+    if (t === 'bitacora') return prev || d;
+    const sumarLectura = campo => { const n = { ...prev }; const ya = Array.isArray(prev[campo]) ? prev[campo] : []; if ((Array.isArray(d[campo]) ? d[campo] : []).includes(u.id) && !ya.includes(u.id)) n[campo] = [...ya, u.id]; return n; };
+    if (t === 'comunicados') { if (!prev) return 'Su perfil no puede crear este registro.'; return sumarLectura('leidos'); }
+    if (t === 'avisos') { if (!prev) return d; if (!avisoPara(prev, u)) return 'Ese aviso no es suyo.'; return sumarLectura('leidoPor'); }
+    if (t === 'asambleas') { // solo su voto y su poder, mientras la asamblea está en curso
+      if (!prev) return 'Su perfil no puede crear este registro.';
+      const n = JSON.parse(JSON.stringify(prev)); const un = u.unidad;
+      if (Array.isArray(n.votos) && Array.isArray(d.votos) && n.estado === 'en curso' && n.asist && n.asist[un]) for (const v of n.votos) { const m = d.votos.find(x => x && x.id === v.id); if (!m || v.cerrada || !m.votos || !(un in m.votos)) continue; const o = +m.votos[un]; if (Number.isInteger(o) && o >= 0 && o < (v.opciones || []).length) { v.votos = v.votos || {}; v.votos[un] = o; } }
+      if (Array.isArray(d.poderes)) { const mio = d.poderes.find(x => x && x.unidad === un); n.poderes = (n.poderes || []).filter(x => x.unidad !== un); if (mio) n.poderes.push({ unidad: un, apoderado: String(mio.apoderado || '').slice(0, 120), doc: String(mio.doc || '').slice(0, 40), fecha: String(mio.fecha || '').slice(0, 10) }); }
+      return n;
+    }
+    if (!['visitas', 'reservas', 'mudanzas', 'pqrs', 'procesos', 'paquetes', 'restric'].includes(t)) return 'Su perfil no puede modificar esta información.';
+    if (prev && prev.unidad !== u.unidad) return MIA;
+    if (d.unidad !== u.unidad) { if (d.unidad) return 'Solo puede registrar información de su unidad.'; d.unidad = u.unidad; }
+    if (t === 'paquetes' || t === 'procesos') {
+      if (!prev) return 'Su perfil no puede crear este registro.';
+      if (t === 'paquetes') return prev; // la entrega la registra portería
+      if (prev.estado === 'cerrado' || prev.estado === 'archivado') return 'El proceso ya está cerrado.';
+      return { ...prev, descargos: String(d.descargos || '').slice(0, 5000), fechaDesc: String(d.fechaDesc || '').slice(0, 10), estado: d.descargos ? 'descargos' : prev.estado };
+    }
+    if (t === 'reservas') {
+      if (!prev) { if (d.estado !== 'pendiente' && d.estado !== 'aprobada') d.estado = 'pendiente'; if (d.estado === 'aprobada') { const z = await q("select d from reg where cj=$1 and t='zonas' and id=$2", [u.cj, d.zona]); if (!z.rows[0] || z.rows[0].d.aprob) d.estado = 'pendiente'; } return d; }
+      if (d.estado !== prev.estado && d.estado !== 'cancelada') return 'No puede cambiar el estado de la reserva.';
+      return d.estado === 'cancelada' ? { ...prev, estado: 'cancelada' } : prev;
+    }
+    if (t === 'mudanzas') {
+      if (!prev) { d.estado = 'por aprobar'; return d; }
+      if (d.estado !== prev.estado && d.estado !== 'cancelada') return 'La mudanza la aprueba la administración.';
+      return d.estado === 'cancelada' ? { ...prev, estado: 'cancelada' } : prev;
+    }
+    if (t === 'pqrs') { if (d.estado !== prev.estado || d.respuesta !== prev.respuesta) return 'La respuesta la da la administración.'; return { ...d, radicado: prev.radicado }; }
+    return d; // visitas y restricciones de su propia unidad
   }
   async function cambioUsuario(u, d) {
     const prev = await getU(d.id);
@@ -485,7 +566,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
     const mods = [...new Set((Array.isArray(b.mods) ? b.mods : []).filter(m => MODULOS[m] && !(c.modulos || []).includes(m)))];
     if (!mensual && !mods.length) return err(res, 400, 'El pedido está vacío.');
     const conceptos = []; let valor = 0;
-    if (mensual) { const p = planDe(c.numUnidades); conceptos.push(p.id); valor += PLANES.find(x => x.id === p.id).precio; if (p.extra) { conceptos.push('extra100-x' + p.extra); valor += p.extra * EXTRA100; } }
+    if (mensual) { const p = planDe(Math.max(+c.numUnidades || 0, await contarUnidades(c.id))); conceptos.push(p.id); valor += PLANES.find(x => x.id === p.id).precio; if (p.extra) { conceptos.push('extra100-x' + p.extra); valor += p.extra * EXTRA100; } }
     for (const m of mods) { conceptos.push('mod-' + m); valor += MODULOS[m]; }
     const pedId = rid('p').slice(0, 14).replace(/[^A-Za-z0-9]/g, 'x');
     const plan = APP + ':paq_' + conceptos.join('_');

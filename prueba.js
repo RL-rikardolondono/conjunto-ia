@@ -75,13 +75,13 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
   ok(r.j.conjunto.pagadoHasta === null && r.j.conjunto.modulos.length === 0 && r.j.conjunto.presupuesto === 5, 'campos protegidos del conjunto');
   r = await api('/api/sync', { desde: 0, cambios: [{ t: 'conjunto', id: CJ, d: { ...cjd, presupuesto: 9 } }], borrados: [] }, R); ok(r.j.rechazados.length === 1, 'residente no cambia el conjunto');
   // asamblea con fusión de votos
-  const AS = { id: 'as1', cj: CJ, estado: 'abierta', asist: {}, votos: [{ id: 'v1', opciones: ['Sí', 'No'], votos: {} }] };
+  const AS = { id: 'as1', cj: CJ, estado: 'en curso', asist: { un1: true, un2: true }, votos: [{ id: 'v1', opciones: ['Sí', 'No'], votos: {} }] };
   r = await api('/api/sync', { desde: 0, cambios: [{ t: 'asambleas', id: 'as1', d: AS }], borrados: [] }, A); const vA = r.j.ver;
-  const b1 = JSON.parse(JSON.stringify(AS)); const m1 = JSON.parse(JSON.stringify(AS)); m1.votos[0].votos.un1 = 0; m1.asist.un1 = true;
-  const m2 = JSON.parse(JSON.stringify(AS)); m2.votos[0].votos.un2 = 1; m2.asist.un2 = true;
+  const b1 = JSON.parse(JSON.stringify(AS)); const m1 = JSON.parse(JSON.stringify(AS)); m1.votos[0].votos.un1 = 0; m1.votos[0].votos.un2 = 0; m1.estado = 'cerrada';
+  const m2 = JSON.parse(JSON.stringify(AS)); m2.votos[0].votos.un2 = 1;
   await api('/api/sync', { desde: vA, cambios: [{ t: 'asambleas', id: 'as1', d: m1, b: b1 }], borrados: [] }, R);
   r = await api('/api/sync', { desde: vA, cambios: [{ t: 'asambleas', id: 'as1', d: m2, b: b1 }], borrados: [] }, A);
-  const asf = r.j.registros.find(x => x.id === 'as1').d; ok(asf.votos[0].votos.un1 === 0 && asf.votos[0].votos.un2 === 1 && asf.asist.un1 && asf.asist.un2, 'votos simultáneos sin pérdida');
+  const asf = r.j.registros.find(x => x.id === 'as1').d; ok(asf.votos[0].votos.un1 === 0 && asf.votos[0].votos.un2 === 1 && asf.asist.un1 && asf.asist.un2 && asf.estado === 'en curso', 'votos simultáneos sin pérdida; el residente solo vota por su unidad');
   ok(JSON.stringify(fusion({ a: 1, b: 1 }, { a: 2, b: 1 }, { a: 1, b: 3 })) === JSON.stringify({ a: 2, b: 3 }), 'fusión básica');
   // inscripción
   const cod = r.j.conjunto.codigo; r = await api('/api/ins/' + cod); ok(r.st === 200 && r.j.unidades.length === 2 && !('prop' in r.j.unidades[0]), 'inscripción: datos públicos sin propietarios');
@@ -133,7 +133,7 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
   r = await api('/api/sync', { desde: 0, cambios: [{ t: 'visitas', id: 'vx2', d: { id: 'vx2', cj: CJ, unidad: 'un1', nombre: 'Foto buena', foto: 'data:image/jpeg;base64,AAAA', estado: 'esperada' } }], borrados: [] }, R2);
   r = await api('/api/estado', null, R2); ok(r.j.registros.find(x => x.id === 'vx2').d.foto === 'data:image/jpeg;base64,AAAA', 'foto real se conserva');
   r = await api('/api/sync', { desde: 0, cambios: [{ t: 'bitacora', id: 'bx1', d: { id: 'bx1', cj: CJ, quien: 'Administración', texto: 'falso' } }], borrados: [] }, R2);
-  r = await api('/api/estado', null, R2); ok(r.j.registros.find(x => x.id === 'bx1').d.quien === 'Rita Residente', 'la bitácora pone el autor real');
+  r = await api('/api/estado', null, A); ok(r.j.registros.find(x => x.id === 'bx1').d.quien === 'Rita Residente', 'la bitácora pone el autor real');
   for (let i = 0; i < 3; i++) await api('/api/olvido', { correo: 'carlos@x.co' });
   const antes = correos.length; r = await api('/api/olvido', { correo: 'carlos@x.co' }); ok(correos.length === antes && r.st === 200, 'límite de enlaces por correo');
   r = await api('/api/registro', { nombre: 'conjunto prueba', nit: '901.999.888', ciudad: 'SANTA MARTA', direccion: 'x', numUnidades: 5, admin: 'C', correo: 'c2@x.co', clave: 'claveSegura1', acepto: true }); ok(r.st === 409, 'mismo conjunto con otro NIT no repite prueba');
