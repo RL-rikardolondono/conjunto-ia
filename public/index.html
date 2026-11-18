@@ -288,7 +288,7 @@ const MODULOS=[
   {id:'proveedores',ic:'📑',n:'Proveedores y contratos',d:'Vigilancia, aseo y mantenimiento con alertas de vencimiento de contratos y pólizas.',precio:110000},
   {id:'importar',ic:'📥',n:'Importar desde Excel',d:'Cargue unidades, propietarios y saldos iniciales desde su archivo de Excel.',precio:60000},
   {id:'pagoslinea',ic:'💳',n:'Pago en línea de cuotas',d:'Los residentes pagan la administración con tarjeta, PSE o Nequi en la cuenta del propio conjunto.',precio:200000,pronto:true},
-  {id:'web',ic:'🌐',n:'Creamos la página web de su conjunto',d:'Página web del conjunto, conectada con la app, por un año.',precio:490000}
+  {id:'web',ic:'🌐',n:'Página web del conjunto',d:'Página web del conjunto, conectada con la app, por un año.',precio:490000}
 ];
 const MODVISTA={asambleas:'asambleas',asamblea:'asambleas',convivencia:'multas',misProcesos:'multas',ordenes:'mantenimiento',bienes:'mantenimiento',proveedores:'proveedores'};
 const G={inicio:['inicio','📊','Tablero'],pasos:['pasos','🚀','Primeros pasos'],visitas:['visitas','🚪','Control de visitas'],mudanzas:['mudanzas','🚚','Mudanzas'],paquetes:['paquetes','📦','Paquetes'],parqueaderos:['parqueaderos','🚗','Parqueaderos y vehículos'],minuta:['minuta','📒','Minuta de portería'],rondas:['rondas','🔦','Rondas de vigilancia'],restricciones:['restricciones','⛔','Restricciones de ingreso'],comunicados:['comunicados','📣','Comunicados'],reservas:['reservas','📅','Reservas de zonas'],pqrs:['pqrs','📝','PQRS'],documentos:['documentos','📁','Documentos'],cartera:['cartera','💰','Cartera'],porAprobar:['porAprobar','✅','Pagos por aprobar'],cobro:['cobro','📨','Gestión de cobro'],conciliacion:['conciliacion','🏦','Conciliación bancaria'],gastos:['gastos','🧾','Gastos y presupuesto'],informes:['informes','📈','Informes'],asambleas:['asambleas','🗳️','Asambleas'],consejo:['consejo','⚖️','Reuniones del consejo'],convivencia:['convivencia','🤝','Convivencia y multas'],libro:['libro','📚','Libro de propietarios'],obligaciones:['obligaciones','🗓️','Obligaciones y mantenimiento'],ordenes:['ordenes','🔧','Órdenes de trabajo'],bienes:['bienes','🪑','Bienes comunes'],personal:['personal','👷','Personal del conjunto'],proveedores:['proveedores','📑','Proveedores y contratos'],unidades:['unidades','🏘️','Unidades y residentes'],inscripciones:['inscripciones','📲','Inscripción de residentes'],zonas:['zonas','🌴','Zonas comunes'],usuarios:['usuarios','👥','Usuarios'],datos:['datos','⚙️','Datos del conjunto'],cierre:['cierre','🎯','Cierre del año'],entrega:['entrega','🔁','Entrega del cargo'],market:['market','🛒','Market de módulos'],suscripcion:['suscripcion','💳','Mi suscripción'],micuenta:['micuenta','🔑','Mi cuenta'],misVisitas:['misVisitas','🚪','Mis visitas'],cuenta:['cuenta','💰','Mi estado de cuenta'],misProcesos:['misProcesos','🤝','Convivencia']};
@@ -463,6 +463,7 @@ function estadoCJ(c){
   const t=hoy();
   if((!c.pagadoHasta||c.pagadoHasta<c.pruebaHasta)&&t<=c.pruebaHasta){const n=diasEntre(t,c.pruebaHasta)+1;return{k:'prueba',t:'En prueba: '+n+(n===1?' día':' días'),cl:'b-warn',n}}
   if(c.pagadoHasta&&t<=c.pagadoHasta)return{k:'activa',t:'Activa',cl:'b-ok'};
+  if((!c.pagadoHasta||c.pagadoHasta<c.pruebaHasta)&&t<addD(c.pruebaHasta,6)){const n=diasEntre(t,addD(c.pruebaHasta,6));return{k:'aviso',t:'Terminó la prueba: '+n+(n===1?' día':' días')+' para pagar',cl:'b-bad',n}}
   if(c.pagadoHasta&&c.pagadoHasta>=c.pruebaHasta){
     const d=new Date(c.pagadoHasta+'T12:00:00');const y=d.getFullYear(),m=d.getMonth()+1;
     const d5=iso(new Date(y,m,5)),d10=iso(new Date(y,m,10));
@@ -618,12 +619,14 @@ function renderRecuperar(){return`<div class="caja"><button class="volver" data-
   <div class="nota">En esta versión de prueba dentro de Claude no salen correos: puede crear la contraseña aquí mismo. En la versión publicada, este paso se hace con el enlace del correo.</div>${ERR}
   ${campo('Correo electrónico','<input type="email" id="rcCorreo" autocomplete="email">')}${claveCampo('rcClave','Contraseña nueva','Mínimo 10 caracteres.')}${claveCampo('rcClave2','Escriba de nuevo la contraseña')}
   <button class="btn btn-p" style="width:100%" data-act="recuperar">Guardar la contraseña</button></div></div>`}
+let PLAN_UN=40;
+function leerPedidoFicha(h){const m=/mods[=-]([^&?]+)/.exec(h);if(m)PEDIDO=m[1].split(/[,_]/).filter(x=>MODULOS.some(y=>y.id===x));const p=/plan[=-](p\d+)/.exec(h);const M={p40:40,p120:120,p300:300,p600:600};if(p&&M[p[1]])PLAN_UN=M[p[1]]}
 function renderRegistro(){
   const ped=PEDIDO.map(id=>MODULOS.find(m=>m.id===id)).filter(Boolean);
   return`<div class="caja" style="max-width:720px"><button class="volver" data-act="land" data-l="inicio">← Volver</button><h1>Crear mi conjunto gratis</h1>
   <p class="suave">Durante 15 días usa todo sin pagar. Al día 15, si quiere seguir, paga la mensualidad y su información queda intacta.</p>${ERR}
   <div class="sec"><h3>🏢 Datos del conjunto</h3><div class="grid2">${campo('Nombre del conjunto o edificio','<input id="rgNombre" placeholder="Ej. Conjunto Residencial Los Almendros">')}${campo('NIT','<input id="rgNit" placeholder="900.123.456-7">')}${campo('Ciudad','<input id="rgCiudad">')}${campo('Dirección','<input id="rgDir">')}</div>
-  ${campo('Número de unidades (apartamentos, casas o locales)','<input type="number" id="rgUnid" min="1" value="40" data-act-input="planReg">','<span id="rgPlan">'+planTxt(40)+'</span>')}</div>
+  ${campo('Número de unidades (apartamentos, casas o locales)','<input type="number" id="rgUnid" min="1" value="'+PLAN_UN+'" data-act-input="planReg">','<span id="rgPlan">'+planTxt(PLAN_UN)+'</span>')}</div>
   <div class="sec v"><h3>👤 Administrador o administradora</h3><div class="grid2">${campo('Nombre completo','<input id="rgAdm">')}${campo('Celular','<input type="tel" id="rgCel">')}</div>${campo('Correo electrónico','<input type="email" id="rgCorreo">','Con este correo entra a la app. La prueba gratis es una sola vez por correo y por NIT.')}</div>
   <div class="sec a"><h3>🔑 Contraseña</h3><div class="grid2">${claveCampo('rgClave','Contraseña','Mínimo 10 caracteres.')}${claveCampo('rgClave2','Escriba de nuevo la contraseña')}</div></div>
   ${ped.length?`<div class="sec v"><h3>🛒 Su pedido de módulos</h3>${ped.map(m=>`<div class="lin"><span>${m.ic} ${esc(m.n)}</span><b>${money(m.precio)}</b></div>`).join('')}<p class="suave peq">Se guarda en su cuenta. Lo paga cuando quiera desde «Market de módulos»; son pagos únicos, no mensuales.</p></div>`:''}
@@ -656,7 +659,7 @@ function renderShell(){
   const vm=MODVISTA[VISTA];
   const cont=(vm&&!tieneMod(vm))?bloqueoMod(vm):(V[VISTA]||V.inicio)();
   return`${SES.super?`<div class="franja-super">🛡️ Modo Superadministrador: está viendo «${esc(c.nombre)}» como administración. Lo que haga queda en la bitácora interna. <button class="btn btn-s btn-sm" data-act="superVolver">← Volver al panel</button></div>`:''}
-  ${(!c.demo&&est.k==='aviso'&&per==='admin'&&!SES.super)?`<div class="franja-pago">⚠️ La mensualidad de Conjunto-IA no se ha pagado. El acceso se cierra en ${est.n} ${est.n===1?'día':'días'}. <button class="btn btn-p btn-sm" data-act="pagarMensualidad">Pagar ahora</button><a class="btn btn-wa btn-sm" href="${WA_URL}" target="_blank" rel="noopener">Soporte</a></div>`:''}
+  ${(!c.demo&&est.k==='aviso'&&per==='admin'&&!SES.super)?`<div class="franja-pago">⚠️ ${(!c.pagadoHasta||c.pagadoHasta<c.pruebaHasta)?'Terminó la prueba gratis de 15 días.':'La mensualidad de Conjunto-IA no se ha pagado.'} El acceso se cierra en ${est.n} ${est.n===1?'día':'días'}. <button class="btn btn-p btn-sm" data-act="pagarMensualidad">Pagar ahora</button><a class="btn btn-wa btn-sm" href="${WA_URL}" target="_blank" rel="noopener">Soporte</a></div>`:''}
   <header class="topbar"><button class="ic-btn hamb" data-act="menu" aria-label="Abrir menú">☰</button>
   <div class="brand">${LOGO}<div><div class="n">Conjunto-IA</div><div class="s">${esc(c.nombre)}</div></div></div>
   <div class="chip-u"><b>👤 ${esc(u.nombre)}</b><span>${esc(sub)}</span><span class="cj-m">${esc(c.nombre)}</span></div>
@@ -674,7 +677,7 @@ function renderCerrado(c){
   const esAdm=SES.perfil==='admin';
   return`<header class="topbar"><div class="brand">${LOGO}<div><div class="n">Conjunto-IA</div><div class="s">${esc(c.nombre)}</div></div></div><div class="top-der"><button class="btn btn-s btn-sm" data-act="salir">Salir</button></div></header>
   <div class="caja"><div class="panel"><h1>El acceso está cerrado por pago</h1>
-  ${esAdm?`<p>La mensualidad de Conjunto-IA no se pagó a tiempo (desde el día 5 aparece un aviso y el día 10 se cierra el acceso, o al terminar la prueba de 15 días). Su información está guardada y se abre de nuevo apenas se confirme el pago.</p><p><b>Mensualidad:</b> ${money(precioMes(c))} (${planDe(c.numUnidades).n.toLowerCase()}).</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-p" data-act="pagarMensualidad">Pagar la mensualidad</button><a class="btn btn-wa" href="${WA_URL}" target="_blank" rel="noopener">Soporte por WhatsApp</a></div>`:`<p>La administración del conjunto debe ponerse al día con el pago del sistema. Su información está guardada. Comuníquese con la administración.</p>`}
+  ${esAdm?`<p>La mensualidad de Conjunto-IA no se pagó a tiempo (desde el día 5 aparece un aviso y el día 10 se cierra el acceso, o 5 días después de terminar la prueba de 15 días). Su información está guardada y se abre de nuevo apenas se confirme el pago.</p><p><b>Mensualidad:</b> ${money(precioMes(c))} (${planDe(c.numUnidades).n.toLowerCase()}).</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-p" data-act="pagarMensualidad">Pagar la mensualidad</button><a class="btn btn-wa" href="${WA_URL}" target="_blank" rel="noopener">Soporte por WhatsApp</a></div>`:`<p>La administración del conjunto debe ponerse al día con el pago del sistema. Su información está guardada. Comuníquese con la administración.</p>`}
   </div></div>`;
 }
 
@@ -1834,7 +1837,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(
 document.addEventListener('input',e=>{if(e.target.id==='rgUnid'){const s=document.getElementById('rgPlan');if(s)s.textContent=planTxt(e.target.value)}});
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const id=e.target.id;if(id==='codIn'){e.preventDefault();ACT.buscarCodigo()}else if(id==='lgClave'||id==='lgCorreo'){e.preventDefault();ACT.login()}else if(id==='placaBus'){e.preventDefault();ACT.buscarPlaca()}else if(id==='saClave'||id==='saClave2'){e.preventDefault();ACT.superLogin()}else if(id==='supBus'){e.preventDefault();ACT.supBuscar()}});
 (function(){const h=decodeURIComponent(location.hash||'').replace(/^#/,'');if(!h)return;
-  if(h.startsWith('registro')){const m=/mods[=-]([^&]+)/.exec(h);if(m){PEDIDO=m[1].split(/[,_]/).filter(x=>MODULOS.some(y=>y.id===x))}SES=null;LAND='registro'}
+  if(h.startsWith('registro')){leerPedidoFicha(h);SES=null;LAND='registro'}
   else if(h.startsWith('inscribirme')){const cod=h.replace(/^inscribirme-?/,'').toUpperCase();SES=null;LAND='inscripcion';INS_COD=cod;const c=S.conjuntos.find(x=>(x.codigo||'')===cod);INS_CJ=c?c.id:null}
   else if(h.startsWith('demo')){SES=null;LAND='inicio';setTimeout(()=>{const e=document.getElementById('demo');if(e)e.scrollIntoView()},300)}
   else if(h.startsWith('ingresar')){SES=null;LAND='login'}
