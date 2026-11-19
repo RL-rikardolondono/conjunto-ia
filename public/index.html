@@ -466,9 +466,8 @@ function estadoCJ(c){
   if((!c.pagadoHasta||c.pagadoHasta<c.pruebaHasta)&&t<addD(c.pruebaHasta,6)){const n=diasEntre(t,addD(c.pruebaHasta,6));return{k:'aviso',t:'Terminó la prueba: '+n+(n===1?' día':' días')+' para pagar',cl:'b-bad',n}}
   if(c.pagadoHasta&&c.pagadoHasta>=c.pruebaHasta){
     const d=new Date(c.pagadoHasta+'T12:00:00');const y=d.getFullYear(),m=d.getMonth()+1;
-    const d5=iso(new Date(y,m,5)),d10=iso(new Date(y,m,10));
-    if(t<d5)return{k:'activa',t:'Activa: pendiente el pago del mes',cl:'b-warn'};
-    if(t<d10){const n=diasEntre(t,d10);return{k:'aviso',t:'Aviso: '+n+(n===1?' día':' días'),cl:'b-bad',n}}
+    const d6=iso(new Date(y,m,6)); // aviso del día 1 al 5; al terminar el día 5 se cierra
+    if(t<d6){const n=diasEntre(t,d6);return{k:'aviso',t:'Aviso: '+n+(n===1?' día':' días'),cl:'b-bad',n}}
   }
   return{k:'cerrada',t:'Cerrada por pago',cl:'b-bad'};
 }
@@ -677,7 +676,7 @@ function renderCerrado(c){
   const esAdm=SES.perfil==='admin';
   return`<header class="topbar"><div class="brand">${LOGO}<div><div class="n">Conjunto-IA</div><div class="s">${esc(c.nombre)}</div></div></div><div class="top-der"><button class="btn btn-s btn-sm" data-act="salir">Salir</button></div></header>
   <div class="caja"><div class="panel"><h1>El acceso está cerrado por pago</h1>
-  ${esAdm?`<p>La mensualidad de Conjunto-IA no se pagó a tiempo (desde el día 5 aparece un aviso y el día 10 se cierra el acceso, o 5 días después de terminar la prueba de 15 días). Su información está guardada y se abre de nuevo apenas se confirme el pago.</p><p><b>Mensualidad:</b> ${money(precioMes(c))} (${planDe(c.numUnidades).n.toLowerCase()}).</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-p" data-act="pagarMensualidad">Pagar la mensualidad</button><a class="btn btn-wa" href="${WA_URL}" target="_blank" rel="noopener">Soporte por WhatsApp</a></div>`:`<p>La administración del conjunto debe ponerse al día con el pago del sistema. Su información está guardada. Comuníquese con la administración.</p>`}
+  ${esAdm?`<p>La mensualidad de Conjunto-IA no se pagó a tiempo (del día 1 al 5 del mes aparece un aviso y al terminar el día 5 se cierra el acceso, o 5 días después de terminar la prueba de 15 días). Su información está guardada y se abre de nuevo apenas se confirme el pago.</p><p><b>Mensualidad:</b> ${money(precioMes(c))} (${planDe(c.numUnidades).n.toLowerCase()}).</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-p" data-act="pagarMensualidad">Pagar la mensualidad</button><a class="btn btn-wa" href="${WA_URL}" target="_blank" rel="noopener">Soporte por WhatsApp</a></div>`:`<p>La administración del conjunto debe ponerse al día con el pago del sistema. Su información está guardada. Comuníquese con la administración.</p>`}
   </div></div>`;
 }
 
@@ -900,7 +899,7 @@ V.market=()=>{const c=cj();const items=PEDIDO.map(id=>MODULOS.find(m=>m.id===id)
   <p class="suave peq" style="margin:8px 0 12px">Mensualidad del sistema: ${money(precioMes(c))} cada mes, aparte. ${est.k==='prueba'?'Empieza al terminar la prueba.':''}</p>
   ${SES.demo?`<button class="btn btn-p" style="width:100%" data-act="quiero">¡Quiero Conjunto-IA ya para mi conjunto!</button>`:`<button class="btn btn-p" style="width:100%" data-act="mkPagar" ${items.length?'':'disabled'}>Revisar y pagar</button>`}</div></div>`;};
 V.suscripcion=()=>{const c=cj(),est=estadoCJ(c),p=planDe(c.numUnidades);
-  return cab('Mi suscripción','Lo que el conjunto le paga a SkyNet Genesis por usar Conjunto-IA: una mensualidad según el número de unidades, con usuarios ilimitados. Si no se paga, desde el día 5 del mes siguiente aparece un aviso y el día 10 se cierra el acceso; al pagar, se abre de inmediato.')+
+  return cab('Mi suscripción','Lo que el conjunto le paga a SkyNet Genesis por usar Conjunto-IA: una mensualidad según el número de unidades, con usuarios ilimitados. Si no se paga, del día 1 al 5 del mes siguiente aparece un aviso y al terminar el día 5 se cierra el acceso; al pagar, se abre de inmediato.')+
   `<div class="kpis"><div class="kpi"><span class="v" style="font-size:26px">${est.t}</span><span class="l">estado</span></div><div class="kpi"><span class="v" style="font-size:26px">${money(p.precio)}</span><span class="l">${esc(p.n.toLowerCase())}, cada mes</span></div><div class="kpi"><span class="v" style="font-size:26px">${c.interna?'Sin cobro':c.pagadoHasta&&c.pagadoHasta>=c.pruebaHasta?fFecha(c.pagadoHasta):'—'}</span><span class="l">pagado hasta</span></div><div class="kpi"><span class="v" style="font-size:26px">${fFecha(c.pruebaHasta)}</span><span class="l">fin de la prueba gratis</span></div></div>
   ${c.interna?'<div class="ok-box">Este conjunto es una empresa interna de SkyNet Genesis: no paga mensualidad.</div>':`<button class="btn btn-p" data-act="pagarMensualidad">Pagar la mensualidad</button> <button class="btn btn-s" data-act="nav" data-v="market">Ir al Market de módulos</button>`}
   <h2 style="margin-top:20px">Planes</h2>${planesHTML()}`;};
