@@ -1809,7 +1809,7 @@ if(SERVIDOR){
     if(TOKEN&&SES&&!SES.demo){
       try{if(SES.super&&!SES.cj){await cargarResumenSA()}else{const e=await api('/api/estado');cargarEstado(e)}}catch(e){if(!e.red){TOKEN=null;guardarToken();SES=null}}
     }else if(SES&&!SES.demo){SES=null}
-    if(ref){history.replaceState(null,'',location.pathname+location.hash);try{const r=await api('/api/bold/volver?ref='+encodeURIComponent(ref));if(SES&&!SES.demo&&SES.cj){const e=await api('/api/estado');cargarEstado(e)}render();modal(r.estado==='aplicado'?'Pago recibido':'Estamos confirmando su pago',r.estado==='aplicado'?'<div class="ok-box">Bold confirmó el pago y ya quedó aplicado. ¡Gracias!</div>':r.estado==='revisar'?'<p>Recibimos el pago, pero necesita una revisión. Le escribimos pronto.</p>':'<p>Bold aún no confirma el pago. En unos minutos se aplica solo; no tiene que volver a pagar.</p>','','Listo');return}catch(e){}}
+    if(ref){history.replaceState(null,'',location.pathname+location.hash);try{const r=await api('/api/bold/volver?ref='+encodeURIComponent(ref));if(SES&&!SES.demo&&SES.cj){const e=await api('/api/estado');cargarEstado(e)}render();const okP=r.estado==='aplicado'||r.estado==='prueba';modal(okP?'Pago recibido':'Estamos confirmando su pago',okP?'<div class="ok-box">'+(r.estado==='prueba'?'Bold confirmó el pago de prueba de $1.000 y quedó registrado.':'Bold confirmó el pago y ya quedó aplicado. ¡Gracias!')+'</div>':r.estado==='revisar'?'<p>Recibimos el pago, pero necesita una revisión. Le escribimos pronto.</p>':'<p>Bold aún no confirma el pago. En unos minutos se aplica solo; no tiene que volver a pagar.</p>','','Listo');return}catch(e){}}
     render();
     if(LAND==='inscripcion'&&INS_COD&&!INS_CJ){const i=$('#insCod');if(i){i.value=INS_COD;ACT.insBuscar()}}
   };
