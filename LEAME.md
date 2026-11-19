@@ -6,7 +6,7 @@ El servidor v3 del 8 nov se perdió (nunca se guardó en D:). Esta versión se r
 - `server.js`: Express + PostgreSQL (Neon). Rutas /api/* (registro, ingreso, varios conjuntos, enlaces de contraseña con Brevo,
   inscripción por código, sincronización con permisos por perfil, recibos RC- y radicados PQ- del servidor, fusión de votos de
   asamblea, Bold central, Superadministrador superadmin.conjunto@skynetgenesis.com con enlace al Gmail del dueño, avisos por correo
-  de fin de prueba (3 y 1 días) y de mensualidad (días 5 y 8), revisión de pagos pendientes cada 20 min). Cierre por pago el día 10 (402).
+  de fin de prueba (3 y 1 días) y de mensualidad (días 1 y 4), revisión de pagos pendientes cada 20 min). Aviso del día 1 al 5 y cierre por pago al terminar el día 5 (402).
 - `public/index.html`: la página (demo en Claude y app real en el subdominio).
 - `prueba.js`: 52 pruebas automáticas con base en memoria (`npm i && npm test`). `dev.js`: prueba local en http://localhost:3101.
 

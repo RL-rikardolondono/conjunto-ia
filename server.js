@@ -94,7 +94,7 @@ function estadoCJ(c, t = hoyCO()) {
   if ((!c.pagadoHasta || c.pagadoHasta < c.pruebaHasta) && t < addD(c.pruebaHasta, 6)) return 'aviso'; // 5 días de aviso al terminar la prueba
   if (c.pagadoHasta && c.pagadoHasta >= c.pruebaHasta) {
     const d = new Date(c.pagadoHasta + 'T12:00:00Z'); const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1;
-    if (t < ymd(y, m, 5)) return 'activa'; if (t < ymd(y, m, 10)) return 'aviso';
+    if (t < ymd(y, m, 6)) return 'aviso'; // regla general: aviso del día 1 al 5; al terminar el día 5 se cierra
   }
   return 'cerrada';
 }
@@ -290,7 +290,7 @@ function crearApp({ pool, fetchFn = (...a) => fetch(...a), env = process.env, ah
       if ((!c.pagadoHasta || c.pagadoHasta < c.pruebaHasta) && (quedan === 3 || quedan === 1)) { clave = 'prueba-' + quedan; asunto = 'Su prueba de Conjunto-IA termina en ' + quedan + (quedan === 1 ? ' día' : ' días'); txt = 'Para seguir usando Conjunto-IA sin interrupciones, pague la mensualidad desde la app (Pagar con Bold).'; }
       const est = estadoCJ(c, t); const dia = +t.slice(8);
       if (!clave && est === 'aviso' && (!c.pagadoHasta || c.pagadoHasta < c.pruebaHasta) && (quedan === -1 || quedan === -4)) { clave = 'fin-prueba' + quedan; const cierre = addD(c.pruebaHasta, 6); asunto = 'Terminó la prueba gratis de Conjunto-IA'; txt = 'La prueba gratis de su conjunto terminó. Si quiere seguir usando Conjunto-IA, pague la mensualidad desde «Suscripción» en la app. Si no se paga, el acceso se cierra el ' + cierre.split('-').reverse().join('/') + '. Su información queda guardada.'; }
-      if (!clave && est === 'aviso' && c.pagadoHasta && c.pagadoHasta >= c.pruebaHasta && (dia === 5 || dia === 8)) { clave = 'mes-' + t.slice(0, 7) + '-' + dia; asunto = 'Mensualidad pendiente de Conjunto-IA'; txt = 'La mensualidad de su conjunto está pendiente. El día 10 se cierra el acceso. Pague desde la app con Bold.'; }
+      if (!clave && est === 'aviso' && c.pagadoHasta && c.pagadoHasta >= c.pruebaHasta && (dia === 1 || dia === 4)) { clave = 'mes-' + t.slice(0, 7) + '-' + dia; asunto = 'Mensualidad pendiente de Conjunto-IA'; txt = 'La mensualidad de su conjunto está pendiente. Si no se paga, el acceso se cierra al terminar el día 5 de este mes. Pague desde la app con Bold.'; }
       if (!clave || c.avisosEnviados[clave]) continue;
       const us = (await usuariosCJ(c.id)).filter(u => u.perfil === 'admin' && u.activo !== false);
       for (const u of us) { await correo(u.correo, asunto, `<p>${c.nombre}:</p><p>${txt}</p><p><a href="${BASE}/">${BASE}</a></p>`); n++; }

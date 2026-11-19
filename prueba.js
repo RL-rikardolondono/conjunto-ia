@@ -105,9 +105,10 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
   r = await api('/api/bold/pedido', { mods: ['web'] }, A); const o2 = r.j.orderId; PAG.set(o2, { pago_id: 'BOLD2', empresa: PED.get(o2).empresa, plan: PED.get(o2).plan, valor: 1000, ref: o2 });
   await revisarPendientes(); r = await api('/api/estado', null, A); ok(!r.j.conjunto.modulos.includes('web'), 'pago menor no activa');
   // cierre por falta de pago
-  hoy = '2027-01-11'; r = await api('/api/sync', { desde: 0, cambios: [{ t: 'unidades', id: 'un3', d: { id: 'un3', cj: CJ, torre: '1', num: '103', coef: 0 } }], borrados: [] }, A); ok(r.st === 402, 'cerrado el día 10');
+  hoy = '2027-01-05'; r = await api('/api/sync', { desde: 0, cambios: [{ t: 'comunicados', id: 'cm5', d: { id: 'cm5', cj: CJ, titulo: 'Aviso', texto: 'x', leidos: [] } }], borrados: [] }, A); ok(r.st === 200 && !r.j.rechazados.length, 'el día 5 sigue abierto (aviso)');
+  hoy = '2027-01-06'; r = await api('/api/sync', { desde: 0, cambios: [{ t: 'unidades', id: 'un3', d: { id: 'un3', cj: CJ, torre: '1', num: '103', coef: 0 } }], borrados: [] }, A); ok(r.st === 402, 'cerrado al terminar el día 5');
   r = await api('/api/sync', { desde: 0, cambios: [], borrados: [] }, A); ok(r.st === 200, 'lectura permitida cerrado');
-  hoy = '2027-01-05'; const n0 = correos.length; await avisosDiarios(); ok(correos.length === n0 + 1 && /pendiente/.test(correos[correos.length - 1].a), 'aviso de mensualidad día 5');
+  hoy = '2027-01-01'; const n0 = correos.length; await avisosDiarios(); ok(correos.length === n0 + 1 && /pendiente/.test(correos[correos.length - 1].a), 'aviso de mensualidad día 1');
   await avisosDiarios(); ok(correos.length === n0 + 1, 'el aviso no se repite');
   hoy = '2026-11-13';
   // superadministrador
